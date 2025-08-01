@@ -178,9 +178,9 @@ elif sezione == "📈 Analisi Scostamenti":
                 elif val == "None" or val == -8888:
                     return 'background-color: black; color: white;'
                 else:
-                    val_float = float(str(val).replace('%',''))
-                    norm = (val_float + 50) / 150
-                    color = plt.cm.RdYlGn(norm)
+                    try:
+                        norm = (val + 50) / 150
+                        color = plt.cm.RdYlGn(norm)
                         return f'background-color: {matplotlib.colors.rgb2hex(color)}'
                     except:
                         return ""
