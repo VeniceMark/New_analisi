@@ -163,29 +163,26 @@ elif sezione == "📈 Analisi Scostamenti":
             tabella_unificata = tabella_unificata.sort_index(axis=1, level=0)
 
             def format_diff(v):
-                if v == -9999:
-                    return "Extrabudget"
-                elif v == -8888:
-                    return None
-                elif v == 0:
-                    return "0%"
-                else:
-                    return f"{v:.1f}%"
+    if v == -9999:
+        return "Extrabudget"
+    elif v == -8888:
+        return "None"
+    else:
+        return f"{v:.1f}%"
 
-            def colori_scostamenti(val):
-                if val == -9999:
-                    return 'background-color: violet; color: white;'
-                elif val == -8888:
-                    return 'background-color: black; color: white;'
-                elif val == 0:
-                    return ''
-                else:
-                    try:
-                        norm = (val + 50) / 150
-                        color = plt.cm.RdYlGn(norm)
-                        return f'background-color: {matplotlib.colors.rgb2hex(color)}'
-                    except:
-                        return ""
+def colori_scostamenti(val):
+    try:
+        if val == "Extrabudget" or val == -9999:
+            return 'background-color: violet; color: white;'
+        elif val == "None" or val == -8888:
+            return 'background-color: black; color: white;'
+        else:
+            val_float = float(str(val).replace('%',''))
+            norm = (val_float + 50) / 150
+            color = plt.cm.RdYlGn(norm)
+            return f'background-color: {matplotlib.colors.rgb2hex(color)}'
+    except:
+        return ""
 
             styled = tabella_unificata.style.format(format_diff, subset=pd.IndexSlice[:, pd.IndexSlice[:, "Scostamento %"]])
             styled = styled.format("{:.1f}", subset=pd.IndexSlice[:, pd.IndexSlice["Totale", "Diff Ore"]])
