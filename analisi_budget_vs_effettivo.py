@@ -173,14 +173,14 @@ elif sezione == "📈 Analisi Scostamenti":
                     return f"{v:.1f}%"
 
             def colori_scostamenti(val):
-                if val == -9999:
+                if val == "Extrabudget" or val == -9999:
                     return 'background-color: violet; color: white;'
-                elif val == -8888:
+                elif val == "None" or val == -8888:
                     return 'background-color: black; color: white;'
                 else:
-                    try:
-                        norm = (val + 50) / 150
-                        color = plt.cm.RdYlGn(norm)
+                    val_float = float(str(val).replace('%',''))
+                    norm = (val_float + 50) / 150
+                    color = plt.cm.RdYlGn(norm)
                         return f'background-color: {matplotlib.colors.rgb2hex(color)}'
                     except:
                         return ""
