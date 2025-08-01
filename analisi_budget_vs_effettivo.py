@@ -172,13 +172,11 @@ elif sezione == "📈 Analisi Scostamenti":
                 else:
                     return f"{v:.1f}%"
 
-            def colori_scostamenti(val):
+            ef colori_scostamenti(val):
                 if val == -9999:
                     return 'background-color: violet; color: white;'
                 elif val == -8888:
                     return 'background-color: black; color: white;'
-                elif val == 0:
-                    return ''
                 else:
                     try:
                         norm = (val + 50) / 150
