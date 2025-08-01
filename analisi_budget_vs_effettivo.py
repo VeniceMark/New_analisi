@@ -188,6 +188,7 @@ elif sezione == "📈 Analisi Scostamenti":
             styled = styled.format("{:.1f}", subset=pd.IndexSlice[:, pd.IndexSlice["Totale", "Diff Ore"]])
             styled = styled.format(lambda x: f"{x:.1f}%", subset=pd.IndexSlice[:, pd.IndexSlice["Totale", "% Totale"]])
             styled = styled.applymap(colori_scostamenti, subset=pd.IndexSlice[:, pd.IndexSlice[:, "Scostamento %"]])
+            styled = styled.applymap(colori_scostamenti, subset=pd.IndexSlice[:, pd.IndexSlice["Totale", "% Totale"]])
             st.dataframe(styled, use_container_width=True)
 
         except Exception as e:
