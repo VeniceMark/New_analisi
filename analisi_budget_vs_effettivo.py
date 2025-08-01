@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -173,10 +172,21 @@ elif sezione == "📈 Analisi Scostamenti":
                 tabella_unificata[(col, "Effettivo")] = eff[col]
                 tabella_unificata[(col, "Budget")] = budget[col]
                 tabella_unificata[(col, "Scostamento %")] = diff_numeric[col]
+
+            # Colonne aggiuntive
+            tabella_unificata[("Totale", "Diff Ore")] = budget.sum(axis=1) - eff.sum(axis=1)
+            tabella_unificata[("Totale", "% Totale")] = np.where(
+                budget.sum(axis=1) > 0,
+                ((budget.sum(axis=1) - eff.sum(axis=1)) / budget.sum(axis=1) * 100).round(1),
+                0
+            )
+
             tabella_unificata.columns = pd.MultiIndex.from_tuples(tabella_unificata.columns)
             tabella_unificata = tabella_unificata.sort_index(axis=1, level=0)
 
             styled = tabella_unificata.style.format(format_diff, subset=pd.IndexSlice[:, pd.IndexSlice[:, "Scostamento %"]])
+            styled = styled.format("{:.1f}", subset=pd.IndexSlice[:, pd.IndexSlice["Totale", "Diff Ore"]])
+            styled = styled.format(lambda x: f"{x:.1f}%", subset=pd.IndexSlice[:, pd.IndexSlice["Totale", "% Totale"]])
             styled = styled.applymap(colori_scostamenti, subset=pd.IndexSlice[:, pd.IndexSlice[:, "Scostamento %"]])
             st.dataframe(styled, use_container_width=True)
 
