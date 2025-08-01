@@ -177,8 +177,6 @@ elif sezione == "📈 Analisi Scostamenti":
                     return 'background-color: violet; color: white;'
                 elif val == -8888:
                     return 'background-color: black; color: white;'
-                elif val == 0:
-                    return ''
                 else:
                     try:
                         norm = (val + 50) / 150
