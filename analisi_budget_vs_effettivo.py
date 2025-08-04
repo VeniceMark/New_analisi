@@ -1,196 +1,102 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib
-import re
 from datetime import datetime
-from io import BytesIO
+import calendar
 
-st.set_page_config(page_title="Gestione Budget e Analisi", layout="wide")
-st.title("📊 Sistema Integrato: Budget Editor + Analisi Scostamenti")
+st.set_page_config(page_title="Analisi Budget vs Effettivo", layout="wide")
 
-if "budget_df" not in st.session_state:
-    st.session_state["budget_df"] = None
+st.sidebar.title("⚙️ Caricamento Dati")
+budget_file = st.sidebar.file_uploader("📊 Carica il file Budget (.xlsx)", type="xlsx")
+effettive_file = st.sidebar.file_uploader("⏱️ Carica il file Ore Effettive (.xlsx)", type="xlsx")
 
-sezione = st.sidebar.radio("Vai a:", ["📝 Budget Editor", "📈 Analisi Scostamenti"])
-
-if sezione == "📝 Budget Editor":
-    st.header("📝 Budget Editor – Inserimento e Calcolo Slot")
-
-    uploaded_budget = st.file_uploader("📤 Carica un file Budget esistente (opzionale)", type=["xlsx"])
-    if uploaded_budget:
-        try:
-            df = pd.read_excel(uploaded_budget)
-            st.session_state["budget_df"] = df
-            st.success("✅ File budget caricato correttamente.")
-        except Exception as e:
-            st.error(f"Errore nel caricamento: {e}")
-
-    st.subheader("➕ Nuovo Cliente")
-
-    with st.form("aggiungi_cliente"):
-        nuovo_cliente = st.text_input("Nome Cliente").strip()
-        anni = st.multiselect("Anni da includere", options=list(range(2024, 2036)), default=[datetime.now().year])
-        mesi = st.multiselect("Mesi da includere", options=list(range(1, 13)), default=list(range(1, 13)))
-
-        coeff = st.number_input("Coefficiente", min_value=1, max_value=100, value=50)
-        try:
-            budget_mensile = float(st.text_input("Budget mensile (numero)", value="0"))
-        except:
-            budget_mensile = 0.0
-        try:
-            xselling = float(st.text_input("Beget Xselling (numero)", value="0"))
-        except:
-            xselling = 0.0
-
-        submitted = st.form_submit_button("Aggiungi Cliente")
-
-        if submitted and nuovo_cliente and anni and mesi:
-            record = {"cliente": nuovo_cliente}
-            for anno in anni:
-                for mese in mesi:
-                    base = f"{anno}-{mese:02d}"
-                    totale = (budget_mensile + xselling) / coeff if coeff > 0 else 0
-                    slot_1_fine = round(totale, 2)
-                    slot_1_15 = round(totale / 2, 2)
-
-                    record[f"{base}_coeff"] = coeff
-                    record[f"{base}_budget_mensile"] = budget_mensile
-                    record[f"{base}_xselling"] = xselling
-                    record[f"{base} (1-15)"] = slot_1_15
-                    record[f"{base} (1-fine)"] = slot_1_fine
-
-            nuovo_df = pd.DataFrame([record])
-
-            if st.session_state["budget_df"] is not None:
-                st.session_state["budget_df"] = pd.concat([st.session_state["budget_df"], nuovo_df], ignore_index=True)
-            else:
-                st.session_state["budget_df"] = nuovo_df
-            st.success(f"Cliente '{nuovo_cliente}' aggiunto!")
-
-    if st.session_state["budget_df"] is not None:
-        st.subheader("✏️ Modifica diretta del Budget")
-        edited_df = st.data_editor(st.session_state["budget_df"], use_container_width=True, num_rows="dynamic")
-        st.session_state["budget_df"] = edited_df
-
-        buffer = BytesIO()
-        edited_df.to_excel(buffer, index=False)
-        st.download_button(
-            label="📥 Scarica file Budget aggiornato",
-            data=buffer.getvalue(),
-            file_name="budget_generato.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+def get_period(data, tipo):
+    giorno = data.day
+    if tipo == "1-15":
+        return giorno <= 15
+    elif tipo == "1-fine":
+        return giorno >= 1
     else:
-        st.info("Carica un file o aggiungi un cliente per iniziare.")
+        return True
 
-elif sezione == "📈 Analisi Scostamenti":
-    st.header("📈 Analisi Scostamenti Budget vs Effettivo")
+def parse_budget(df_budget):
+    clienti = df_budget.iloc[:, 0]
+    mesi = [calendar.month_name[i] for i in range(1, 13)]
+    records = []
+    for idx, cliente in enumerate(clienti):
+        for i, mese in enumerate(mesi):
+            base = 1 + i * 5
+            coeff = df_budget.iloc[idx, base]
+            budget = df_budget.iloc[idx, base+1]
+            extra  = df_budget.iloc[idx, base+2]
+            records.append({
+                "cliente": cliente,
+                "mese_anno": f"{mese}-{datetime.today().year}",
+                "coefficiente": coeff,
+                "budget": budget,
+                "extrabudget": extra
+            })
+    df = pd.DataFrame(records)
+    df['mese_anno'] = pd.to_datetime(df['mese_anno'], format='%B-%Y').dt.to_period('M').astype(str)
+    return df
 
-    uploaded_eff = st.file_uploader("📥 Carica file 'Effettivo' (obbligatorio)", type=["xlsx"])
-    if st.session_state["budget_df"] is not None:
-        df_budget = st.session_state["budget_df"]
-        st.success("✅ Usando il file Budget generato nella sessione.")
+def color_percent(val, budget, effettive):
+    if budget == 0 and effettive == 0:
+        return 'background-color: black; color: white'
+    elif budget == 0 and effettive > 0:
+        return 'background-color: purple; color: white'
     else:
-        uploaded_budget = st.file_uploader("📥 Carica file 'Budget' (alternativo)", type=["xlsx"])
-        if uploaded_budget:
-            df_budget = pd.read_excel(uploaded_budget)
-        else:
-            df_budget = None
+        val = max(-100, min(100, val))
+        red = int(255 - (val + 100) * 255 / 200)
+        green = int((val + 100) * 255 / 200)
+        return f'background-color: rgb({red},{green},0); color: white'
 
-    if uploaded_eff and df_budget is not None:
-        try:
-            df_eff = pd.read_excel(uploaded_eff, sheet_name="Effettivo")
-            df_eff.columns = df_eff.columns.str.strip().str.lower()
-            df_eff['data'] = pd.to_datetime(df_eff['data'], format='%d-%m-%Y', errors='coerce')
-            df_eff['mese'] = df_eff['data'].dt.to_period('M').astype(str)
-            df_eff['giorno'] = df_eff['data'].dt.day
+if budget_file and effettive_file:
+    df_budget_raw = pd.read_excel(budget_file)
+    df_eff = pd.read_excel(effettive_file)
+    df_eff['data'] = pd.to_datetime(df_eff['data'])
 
-            pivot_1_15 = df_eff[df_eff['giorno'] <= 15].pivot_table(index='cliente', columns='mese', values='ore', aggfunc='sum', fill_value=0)
-            pivot_1_15.columns = [f"{col} (1-15)" for col in pivot_1_15.columns]
+    cliente_sel = st.sidebar.selectbox("Seleziona Cliente", ["Tutti"] + sorted(df_eff['cliente'].unique()))
+    periodo = st.sidebar.radio("Periodo", ["1-15", "1-fine", "Tutti i giorni"])
 
-            pivot_1_fine = df_eff.pivot_table(index='cliente', columns='mese', values='ore', aggfunc='sum', fill_value=0)
-            pivot_1_fine.columns = [f"{col} (1-fine)" for col in pivot_1_fine.columns]
+    if cliente_sel != "Tutti":
+        df_eff = df_eff[df_eff['cliente'] == cliente_sel]
+    if periodo != "Tutti i giorni":
+        df_eff = df_eff[df_eff['data'].apply(lambda d: get_period(d, periodo))]
 
-            df_eff_tot = pd.concat([pivot_1_15, pivot_1_fine], axis=1).fillna(0)
-            df_eff_tot = df_eff_tot.reindex(sorted(df_eff_tot.columns), axis=1)
-            df_eff_tot.index = df_eff_tot.index.astype(str)
+    df_budget = parse_budget(df_budget_raw)
+    df_eff['mese_anno'] = df_eff['data'].dt.to_period('M').astype(str)
+    df_agg_eff = df_eff.groupby(['cliente', 'mese_anno'])['ore_lavorate'].sum().reset_index()
 
-            df_budget = df_budget.set_index("cliente").fillna(0)
-            pattern = re.compile(r"^\d{4}-\d{2} \(1-(15|fine)\)$")
-            colonne_valide = [col for col in df_budget.columns if pattern.match(col)]
+    df_merge = pd.merge(df_budget, df_agg_eff, on=['cliente', 'mese_anno'], how='outer').fillna(0)
+    df_merge['slot'] = (df_merge['budget'] + df_merge['extrabudget']) / df_merge['coefficiente'].replace(0, np.nan)
+    df_merge['scostamento_ore'] = df_merge['slot'] - df_merge['ore_lavorate']
+    df_merge['%_scostamento'] = np.where(
+        df_merge['slot'] == 0,
+        np.where(df_merge['ore_lavorate'] == 0, 0, -999),
+        ((df_merge['slot'] - df_merge['ore_lavorate']) / df_merge['slot']) * 100
+    )
 
-            periodo_scelto = st.sidebar.selectbox("🎯 Seleziona periodo da analizzare", ["Tutto"] + sorted(colonne_valide))
-            clienti_lista = sorted(df_budget.index.astype(str).unique())
-            cliente_scelto = st.sidebar.selectbox("👤 Filtra per cliente", ["Tutti"] + clienti_lista)
+    df_total = df_merge.groupby('cliente').agg({'slot':'sum','ore_lavorate':'sum'}).reset_index()
+    df_total['scostamento_totale'] = df_total['slot'] - df_total['ore_lavorate']
+    df_total['%_totale'] = np.where(
+        df_total['slot']==0,
+        np.where(df_total['ore_lavorate']==0, 0, -999),
+        ((df_total['slot'] - df_total['ore_lavorate']) / df_total['slot']) * 100
+    )
 
-            colonne_comuni = df_eff_tot.columns.intersection(colonne_valide)
-            if periodo_scelto != "Tutto":
-                colonne_comuni = [periodo_scelto]
+    styled_tot = df_total.style.apply(
+        lambda row: [color_percent(row['%_totale'], row['slot'], row['ore_lavorate']) if c=='%_totale' else '' for c in df_total.columns],
+        axis=1
+    ).format({'slot':'{:.2f}','ore_lavorate':'{:.2f}','scostamento_totale':'{:+.2f}','%_totale':'{:+.1f}%'})
+    styled_det = df_merge.style.apply(
+        lambda row: [color_percent(row['%_scostamento'], row['slot'], row['ore_lavorate']) if c=='%_scostamento' else '' for c in df_merge.columns],
+        axis=1
+    ).format({'budget':'{:.2f}','extrabudget':'{:.2f}','slot':'{:.2f}','ore_lavorate':'{:.2f}','scostamento_ore':'{:+.2f}','%_scostamento':'{:+.1f}%'})
 
-            clienti_comuni = df_eff_tot.index.union(df_budget.index)
-            eff = df_eff_tot.reindex(index=clienti_comuni, columns=colonne_comuni, fill_value=0)
-            budget = df_budget.reindex(index=clienti_comuni, columns=colonne_comuni, fill_value=0)
-
-            if cliente_scelto != "Tutti":
-                eff = eff.loc[[cliente_scelto]] if cliente_scelto in eff.index else eff.iloc[0:0]
-                budget = budget.loc[[cliente_scelto]] if cliente_scelto in budget.index else budget.iloc[0:0]
-
-            diff_numeric = pd.DataFrame(index=budget.index, columns=budget.columns, dtype=float)
-            for col in colonne_comuni:
-                diff_numeric[col] = np.where(
-                    (budget[col] == 0) & (eff[col] > 0), -9999,
-                    np.where((budget[col] == 0) & (eff[col] == 0), -8888,
-                    ((budget[col] - eff[col]) / budget[col] * 100).round(1))
-                )
-
-            tabella_unificata = pd.DataFrame(index=eff.index)
-            for col in colonne_comuni:
-                tabella_unificata[(col, "Effettivo")] = eff[col]
-                tabella_unificata[(col, "Budget")] = budget[col]
-                tabella_unificata[(col, "Scostamento %")] = diff_numeric[col]
-
-            tabella_unificata[("Totale", "Diff Ore")] = budget.sum(axis=1) - eff.sum(axis=1)
-            tabella_unificata[("Totale", "% Totale")] = np.where(
-                budget.sum(axis=1) > 0,
-                ((budget.sum(axis=1) - eff.sum(axis=1)) / budget.sum(axis=1) * 100).round(1),
-                -8888
-            )
-
-            tabella_unificata.columns = pd.MultiIndex.from_tuples(tabella_unificata.columns)
-            tabella_unificata = tabella_unificata.sort_index(axis=1, level=0)
-
-            def format_diff(v):
-                if v == -9999:
-                    return "Extrabudget"
-                elif v == -8888:
-                    return None
-                elif v == 0:
-                    return "0%"
-                else:
-                    return f"{v:.1f}%"
-
-            def colori_scostamenti(val):
-                if val == -9999:
-                    return 'background-color: violet; color: white;'
-                elif val == -8888:
-                    return 'background-color: black; color: white;'
-                else:
-                    try:
-                        norm = (val + 50) / 150
-                        color = plt.cm.RdYlGn(norm)
-                        return f'background-color: {matplotlib.colors.rgb2hex(color)}'
-                    except:
-                        return ""
-
-            styled = tabella_unificata.style.format(format_diff, subset=pd.IndexSlice[:, pd.IndexSlice[:, "Scostamento %"]])
-            styled = styled.format("{:.1f}", subset=pd.IndexSlice[:, pd.IndexSlice["Totale", "Diff Ore"]])
-            styled = styled.format(lambda x: f"{x:.1f}%", subset=pd.IndexSlice[:, pd.IndexSlice["Totale", "% Totale"]])
-            styled = styled.applymap(colori_scostamenti, subset=pd.IndexSlice[:, pd.IndexSlice[:, "Scostamento %"]])
-            styled = styled.applymap(colori_scostamenti, subset=pd.IndexSlice[:, pd.IndexSlice["Totale", "% Totale"]])
-            st.dataframe(styled, use_container_width=True)
-
-        except Exception as e:
-            st.error(f"Errore durante l'elaborazione: {e}")
+    st.markdown("## Riepilogo per Cliente")
+    st.dataframe(styled_tot, use_container_width=True)
+    st.markdown("## Dettaglio Mensile")
+    st.dataframe(styled_det, use_container_width=True)
+else:
+    st.warning("Carica entrambi i file per iniziare.")
