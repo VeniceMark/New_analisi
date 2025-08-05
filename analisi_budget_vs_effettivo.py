@@ -123,4 +123,86 @@ elif sezione == "\U0001F4C8 Analisi Scostamenti":
             colonne_comuni = df_eff_tot.columns.intersection(colonne_valide)
 
             clienti = sorted(df_budget.index.unique())
-            periodi
+            try:
+                periodi = sorted(colonne_comuni, key=lambda x: pd.to_datetime(x.split(" ")[0] + ("-01" if "1-15" in x else "-16")))
+            except Exception as e:
+                st.warning(f"Errore nel parsing dei periodi: {e}")
+                periodi = list(colonne_comuni)
+
+            cliente_sel = st.sidebar.selectbox("Filtro Cliente", options=["Tutti"] + clienti)
+            periodo_sel = st.sidebar.selectbox("Filtro Periodo", options=["Tutti"] + periodi)
+
+            eff = df_eff_tot.reindex(index=df_budget.index, columns=colonne_comuni, fill_value=0)
+            budget = df_budget.reindex(index=df_budget.index, columns=colonne_comuni, fill_value=0)
+
+            if cliente_sel != "Tutti":
+                eff = eff.loc[[cliente_sel]]
+                budget = budget.loc[[cliente_sel]]
+            if periodo_sel != "Tutti":
+                eff = eff[[periodo_sel]]
+                budget = budget[[periodo_sel]]
+
+            diff_percent = pd.DataFrame(index=budget.index, columns=budget.columns, dtype=object)
+            for col in budget.columns:
+                diff_percent[col] = np.where(
+                    (budget[col] == 0) & (eff[col] > 0), "Extrabudget",
+                    np.where((budget[col] == 0) & (eff[col] == 0), "Zero",
+                    ((budget[col] - eff[col]) / budget[col] * 100).round(1).astype(str) + "%")
+                )
+
+            def colori_scostamenti(val):
+                if val == "Extrabudget":
+                    return 'background-color: violet; color: white;'
+                elif val == "Zero":
+                    return 'background-color: black; color: white;'
+                else:
+                    try:
+                        val_float = float(val.strip('%'))
+                        norm = (val_float + 50) / 150
+                        color = plt.cm.RdYlGn(norm)
+                        return f'background-color: {matplotlib.colors.rgb2hex(color)}'
+                    except:
+                        return ""
+
+            st.subheader("\U0001F4C8 Scostamento percentuale tra Budget e Ore Effettive")
+            styled_diff = diff_percent.style.applymap(colori_scostamenti)
+            styled_diff = styled_diff.format(lambda v: "0%" if v == "Zero" else v)
+            st.dataframe(styled_diff, use_container_width=True)
+
+            st.subheader("\U0001F4CB Dati Dettagliati")
+            df_view = pd.concat([eff, budget, diff_percent], keys=["Effettivo", "Budget", "Scostamento %"], axis=1)
+
+            scostamento_cols = [col for col in df_view.columns if isinstance(col, tuple) and col[0] == "Scostamento %"]
+            styled_view = df_view.style.applymap(colori_scostamenti, subset=pd.IndexSlice[:, scostamento_cols])
+            styled_view = styled_view.format(lambda v: "0%" if v == "Zero" else v, subset=pd.IndexSlice[:, scostamento_cols])
+            st.dataframe(styled_view, use_container_width=True)
+
+            st.subheader("\U0001F4CA Dashboard riepilogativa per cliente")
+            colonne_fine = [col for col in budget.columns if "(1-fine)" in col]
+            dashboard = pd.DataFrame({
+                "Ore Effettive": eff[colonne_fine].sum(axis=1),
+                "Ore a Budget": budget[colonne_fine].sum(axis=1)
+            })
+            dashboard["Scostamento Valore (ore)"] = dashboard["Ore a Budget"] - dashboard["Ore Effettive"]
+            dashboard["Scostamento %"] = np.where(
+                dashboard["Ore a Budget"] > 0,
+                ((dashboard["Ore a Budget"] - dashboard["Ore Effettive"]) / dashboard["Ore a Budget"] * 100).round(1),
+                np.where(dashboard["Ore Effettive"] > 0, -9999, 0)
+            )
+            dashboard = dashboard[~((dashboard["Ore Effettive"] == 0) & (dashboard["Ore a Budget"] == 0))]
+            dashboard = dashboard.sort_values(by="Scostamento %", ascending=True)
+
+            def format_scostamento(val):
+                if val == -9999:
+                    return "Extrabudget"
+                elif val == 0:
+                    return "0%"
+                else:
+                    return f"{val:.1f}%"
+
+            dashboard["Scostamento % (str)"] = dashboard["Scostamento %"].apply(format_scostamento)
+            styled_dashboard = dashboard.style.applymap(colori_scostamenti, subset=["Scostamento % (str)"])
+            st.dataframe(styled_dashboard, use_container_width=True)
+
+        except Exception as e:
+            st.error(f"Errore durante l'elaborazione: {e}")
