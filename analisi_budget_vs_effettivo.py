@@ -142,31 +142,37 @@ elif sezione == "\U0001F4C8 Analisi Scostamenti":
                 eff = eff[[periodo_sel]]
                 budget = budget[[periodo_sel]]
 
-            diff_percent = pd.DataFrame(index=budget.index, columns=budget.columns, dtype=object)
+            diff_percent = pd.DataFrame(index=budget.index, columns=budget.columns, dtype=float)
             for col in budget.columns:
                 diff_percent[col] = np.where(
-                    (budget[col] == 0) & (eff[col] > 0), "Extrabudget",
-                    np.where((budget[col] == 0) & (eff[col] == 0), "Zero",
-                    ((budget[col] - eff[col]) / budget[col] * 100).round(1).astype(str) + "%")
+                    (budget[col] == 0) & (eff[col] > 0), -9999,
+                    np.where((budget[col] == 0) & (eff[col] == 0), 0,
+                    ((budget[col] - eff[col]) / budget[col] * 100).round(1))
                 )
 
             def colori_scostamenti(val):
-                if val == "Extrabudget":
+                if val == -9999:
                     return 'background-color: violet; color: white;'
-                elif val == "Zero":
+                elif val == 0:
                     return 'background-color: black; color: white;'
                 else:
                     try:
-                        val_float = float(val.strip('%'))
-                        norm = (val_float + 50) / 150
+                        norm = (val + 50) / 150
                         color = plt.cm.RdYlGn(norm)
                         return f'background-color: {matplotlib.colors.rgb2hex(color)}'
                     except:
                         return ""
 
+            def formatta_valore(val):
+                if val == -9999:
+                    return "Extrabudget"
+                elif val == 0:
+                    return "0%"
+                else:
+                    return f"{val:.1f}%"
+
             st.subheader("\U0001F4C8 Scostamento percentuale tra Budget e Ore Effettive")
-            styled_diff = diff_percent.style.applymap(colori_scostamenti)
-            styled_diff = styled_diff.format(lambda v: "0%" if v == "Zero" else v)
+            styled_diff = diff_percent.style.applymap(colori_scostamenti).format(formatta_valore)
             st.dataframe(styled_diff, use_container_width=True)
 
             st.subheader("\U0001F4CB Dati Dettagliati")
