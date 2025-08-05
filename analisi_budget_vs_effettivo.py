@@ -1,197 +1,430 @@
-# File aggiornato con la correzione nella dashboard riepilogativa per cliente
-import streamlit as st
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib
-import re
-from datetime import datetime
-from io import BytesIO
+```html
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analisi Budget vs Effettivo</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary: #3b82f6;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #8b5cf6;
+            --dark: #1e293b;
+            --light: #f8fafc;
+            --gray: #94a3b8;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background-color: #f1f5f9;
+            color: #334155;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            color: white;
+            padding: 2rem 0;
+            text-align: center;
+            border-radius: 10px;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .subtitle {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        
+        h2 {
+            color: #334155;
+            font-size: 1.5rem;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+        }
+        
+        th, td {
+            padding: 0.75rem;
+            text-align: center;
+            border: 1px solid #e2e8f0;
+        }
+        
+        th {
+            background-color: #f1f5f9;
+            font-weight: 600;
+        }
+        
+        .positive {
+            background-color: #dcfce7;
+            color: #166534;
+        }
+        
+        .negative {
+            background-color: #fee2e2;
+            color: #991b1b;
+        }
+        
+        .extrabudget {
+            background-color: #ddd6fe;
+            color: #5b21b6;
+        }
+        
+        .zero {
+            background-color: #1e293b;
+            color: white;
+        }
+        
+        .chart-container {
+            height: 400px;
+            margin-top: 1rem;
+        }
+        
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 1rem;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 3px;
+        }
+        
+        .budget-color {
+            background-color: #3b82f6;
+        }
+        
+        .actual-color {
+            background-color: #10b981;
+        }
+        
+        .extra-color {
+            background-color: #8b5cf6;
+        }
+        
+        footer {
+            text-align: center;
+            padding: 2rem 0;
+            color: var(--gray);
+            font-size: 0.9rem;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            
+            h1 {
+                font-size: 2rem;
+            }
+            
+            th, td {
+                padding: 0.5rem;
+                font-size: 0.85rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Analisi Budget vs Effettivo</h1>
+            <p class="subtitle">Confronto dettagliato delle ore lavorate previste e reali</p>
+        </header>
+        
+        <div class="card">
+            <div class="card-header">
+                <h2>📊 Scostamento Percentuale</h2>
+            </div>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Cliente</th>
+                            <th>2025-07 (1-15)</th>
+                            <th>2025-07 (1-31)</th>
+                            <th>2025-08 (1-15)</th>
+                            <th>2025-08 (1-31)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Cliente A</td>
+                            <td class="positive">+25%</td>
+                            <td class="negative">-10%</td>
+                            <td class="positive">+5%</td>
+                            <td class="extrabudget">Extrabudget</td>
+                        </tr>
+                        <tr>
+                            <td>Cliente B</td>
+                            <td class="negative">-30%</td>
+                            <td class="negative">-15%</td>
+                            <td class="positive">+20%</td>
+                            <td class="zero">0%</td>
+                        </tr>
+                        <tr>
+                            <td>Cliente C</td>
+                            <td class="extrabudget">Extrabudget</td>
+                            <td class="positive">+12%</td>
+                            <td class="negative">-8%</td>
+                            <td class="positive">+3%</td>
+                        </tr>
+                        <tr>
+                            <td>Cliente D</td>
+                            <td class="zero">0%</td>
+                            <td class="zero">0%</td>
+                            <td class="zero">0%</td>
+                            <td class="zero">0%</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h2>📋 Dati Dettagliati</h2>
+            </div>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th rowspan="2">Cliente</th>
+                            <th colspan="3">2025-07 (1-15)</th>
+                            <th colspan="3">2025-08 (1-31)</th>
+                        </tr>
+                        <tr>
+                            <th>Effettivo</th>
+                            <th>Budget</th>
+                            <th>%</th>
+                            <th>Effettivo</th>
+                            <th>Budget</th>
+                            <th>%</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Cliente A</td>
+                            <td>120</td>
+                            <td>100</td>
+                            <td class="positive">+20%</td>
+                            <td>85</td>
+                            <td>100</td>
+                            <td class="negative">-15%</td>
+                        </tr>
+                        <tr>
+                            <td>Cliente B</td>
+                            <td>70</td>
+                            <td>100</td>
+                            <td class="negative">-30%</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td class="zero">0%</td>
+                        </tr>
+                        <tr>
+                            <td>Cliente C</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td class="zero">0%</td>
+                            <td>95</td>
+                            <td>80</td>
+                            <td class="positive">+18.75%</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h2>📈 Dashboard Riepilogativa</h2>
+            </div>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Cliente</th>
+                            <th>Ore Effettive</th>
+                            <th>Ore a Budget</th>
+                            <th>Scostamento %</th>
+                            <th>Scostamento Valore</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Cliente A</td>
+                            <td>205</td>
+                            <td>200</td>
+                            <td class="positive">+2.5%</td>
+                            <td class="positive">+5</td>
+                        </tr>
+                        <tr>
+                            <td>Cliente B</td>
+                            <td>70</td>
+                            <td>100</td>
+                            <td class="negative">-30%</td>
+                            <td class="negative">-30</td>
+                        </tr>
+                        <tr>
+                            <td>Cliente C</td>
+                            <td>95</td>
+                            <td>80</td>
+                            <td class="positive">+18.75%</td>
+                            <td class="extrabudget">15</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h2>📉 Grafico a Barre</h2>
+            </div>
+            <div class="chart-container">
+                <canvas id="barChart"></canvas>
+            </div>
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color budget-color"></div>
+                    <span>Budget</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color actual-color"></div>
+                    <span>Effettivo</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color extra-color"></div>
+                    <span>Extrabudget</span>
+                </div>
+            </div>
+        </div>
+        
+        <footer>
+            <p>Analisi Budget vs Effettivo - Sistema di monitoraggio delle performance</p>
+        </footer>
+    </div>
 
-st.set_page_config(page_title="Gestione Budget e Analisi", layout="wide")
-st.title("\U0001F4CA Sistema Integrato: Budget Editor + Analisi Scostamenti")
-
-if "budget_df" not in st.session_state:
-    st.session_state["budget_df"] = None
-
-sezione = st.sidebar.radio("Vai a:", ["\U0001F4DD Budget Editor", "\U0001F4C8 Analisi Scostamenti"])
-
-if sezione == "\U0001F4DD Budget Editor":
-    st.header("\U0001F4DD Budget Editor – Inserimento e Calcolo Slot")
-
-    uploaded_budget = st.file_uploader("\U0001F4C4 Carica un file Budget esistente (opzionale)", type=["xlsx"])
-    if uploaded_budget:
-        try:
-            df = pd.read_excel(uploaded_budget)
-            st.session_state["budget_df"] = df
-            st.success("✅ File budget caricato correttamente.")
-        except Exception as e:
-            st.error(f"Errore nel caricamento: {e}")
-
-    st.subheader("➕ Nuovo Cliente")
-
-    with st.form("aggiungi_cliente"):
-        nuovo_cliente = st.text_input("Nome Cliente").strip()
-        anni = st.multiselect("Anni da includere", options=list(range(2024, 2036)), default=[datetime.now().year])
-        mesi = st.multiselect("Mesi da includere", options=list(range(1, 13)), default=list(range(1, 13)))
-
-        coeff = st.number_input("Coefficiente", min_value=1, max_value=100, value=50)
-        try:
-            budget_mensile = float(st.text_input("Budget mensile (numero)", value="0"))
-        except:
-            budget_mensile = 0.0
-        try:
-            xselling = float(st.text_input("Beget Xselling (numero)", value="0"))
-        except:
-            xselling = 0.0
-
-        submitted = st.form_submit_button("Aggiungi Cliente")
-
-        if submitted and nuovo_cliente and anni and mesi:
-            record = {"cliente": nuovo_cliente}
-            for anno in anni:
-                for mese in mesi:
-                    base = f"{anno}-{mese:02d}"
-                    totale = (budget_mensile + xselling) / coeff if coeff > 0 else 0
-                    slot_1_fine = round(totale, 2)
-                    slot_1_15 = round(totale / 2, 2)
-
-                    record[f"{base}_coeff"] = coeff
-                    record[f"{base}_budget_mensile"] = budget_mensile
-                    record[f"{base}_xselling"] = xselling
-                    record[f"{base} (1-15)"] = slot_1_15
-                    record[f"{base} (1-fine)"] = slot_1_fine
-
-            nuovo_df = pd.DataFrame([record])
-
-            if st.session_state["budget_df"] is not None:
-                st.session_state["budget_df"] = pd.concat([st.session_state["budget_df"], nuovo_df], ignore_index=True)
-            else:
-                st.session_state["budget_df"] = nuovo_df
-            st.success(f"Cliente '{nuovo_cliente}' aggiunto!")
-
-    if st.session_state["budget_df"] is not None:
-        st.subheader("✏️ Modifica diretta del Budget")
-        edited_df = st.data_editor(st.session_state["budget_df"], use_container_width=True, num_rows="dynamic")
-        st.session_state["budget_df"] = edited_df
-
-        buffer = BytesIO()
-        edited_df.to_excel(buffer, index=False)
-        st.download_button(
-            label="\U0001F4C5 Scarica file Budget aggiornato",
-            data=buffer.getvalue(),
-            file_name="budget_generato.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-    else:
-        st.info("Carica un file o aggiungi un cliente per iniziare.")
-
-elif sezione == "\U0001F4C8 Analisi Scostamenti":
-    st.header("\U0001F4C8 Analisi Scostamenti Budget vs Effettivo")
-
-    uploaded_eff = st.file_uploader("\U0001F4C5 Carica file 'Effettivo' (obbligatorio)", type=["xlsx"])
-    if st.session_state["budget_df"] is not None:
-        df_budget = st.session_state["budget_df"]
-        st.success("✅ Usando il file Budget generato nella sessione.")
-    else:
-        uploaded_budget = st.file_uploader("\U0001F4C5 Carica file 'Budget' (alternativo)", type=["xlsx"])
-        if uploaded_budget:
-            df_budget = pd.read_excel(uploaded_budget)
-        else:
-            df_budget = None
-
-    if uploaded_eff and df_budget is not None:
-        try:
-            df_eff = pd.read_excel(uploaded_eff, sheet_name="Effettivo")
-            df_eff.columns = df_eff.columns.str.strip().str.lower()
-            df_eff['data'] = pd.to_datetime(df_eff['data'], format='%d-%m-%Y', errors='coerce')
-            df_eff['mese'] = df_eff['data'].dt.to_period('M').astype(str)
-            df_eff['giorno'] = df_eff['data'].dt.day
-
-            pivot_1_15 = df_eff[df_eff['giorno'] <= 15].pivot_table(index='cliente', columns='mese', values='ore', aggfunc='sum', fill_value=0)
-            pivot_1_15.columns = [f"{col} (1-15)" for col in pivot_1_15.columns]
-
-            pivot_1_fine = df_eff.pivot_table(index='cliente', columns='mese', values='ore', aggfunc='sum', fill_value=0)
-            pivot_1_fine.columns = [f"{col} (1-fine)" for col in pivot_1_fine.columns]
-
-            df_eff_tot = pd.concat([pivot_1_15, pivot_1_fine], axis=1).fillna(0)
-            df_eff_tot = df_eff_tot.reindex(sorted(df_eff_tot.columns), axis=1)
-            df_eff_tot.index = df_eff_tot.index.astype(str)
-
-            df_budget = df_budget.set_index("cliente").fillna(0)
-            pattern = re.compile(r"^\d{4}-\d{2} \(1-(15|fine)\)$")
-            colonne_valide = [col for col in df_budget.columns if pattern.match(col)]
-            colonne_comuni = df_eff_tot.columns.intersection(colonne_valide)
-
-            eff = df_eff_tot.reindex(index=df_budget.index, columns=colonne_comuni, fill_value=0)
-            budget = df_budget.reindex(index=df_budget.index, columns=colonne_comuni, fill_value=0)
-
-            diff_percent = pd.DataFrame(index=budget.index, columns=budget.columns, dtype=object)
-
-            for col in colonne_comuni:
-                diff_percent[col] = np.where(
-                    (budget[col] == 0) & (eff[col] > 0), "Extrabudget",
-                    np.where((budget[col] == 0) & (eff[col] == 0), "Zero",
-                    ((budget[col] - eff[col]) / budget[col] * 100).round(1).astype(str) + "%")
-                )
-
-            def colori_scostamenti(val):
-                if val == "Extrabudget":
-                    return 'background-color: violet; color: white;'
-                elif val == "Zero":
-                    return 'background-color: black; color: white;'
-                else:
-                    try:
-                        val_float = float(val.strip('%'))
-                        norm = (val_float + 50) / 150
-                        color = plt.cm.RdYlGn(norm)
-                        return f'background-color: {matplotlib.colors.rgb2hex(color)}'
-                    except:
-                        return ""
-
-            st.subheader("\U0001F4C8 Scostamento percentuale tra Budget e Ore Effettive")
-            styled_diff = diff_percent.style.applymap(colori_scostamenti)
-            styled_diff = styled_diff.format(lambda v: "0%" if v == "Zero" else v)
-            st.dataframe(styled_diff, use_container_width=True)
-
-            st.subheader("\U0001F4CB Dati Dettagliati")
-            df_view = pd.concat([eff, budget, diff_percent], keys=["Effettivo", "Budget", "Scostamento %"], axis=1)
-
-            scostamento_cols = [col for col in df_view.columns if isinstance(col, tuple) and col[0] == "Scostamento %"]
-            styled_view = df_view.style.applymap(colori_scostamenti, subset=pd.IndexSlice[:, scostamento_cols])
-            styled_view = styled_view.format(lambda v: "0%" if v == "Zero" else v, subset=pd.IndexSlice[:, scostamento_cols])
-            st.dataframe(styled_view, use_container_width=True)
-
-            # ✅ Dashboard corretta: considera solo colonne "(1-fine)"
-            st.subheader("\U0001F4CA Dashboard riepilogativa per cliente")
-            colonne_budget_fine = [col for col in budget.columns if "(1-fine)" in col]
-            colonne_effettivo_fine = [col for col in eff.columns if "(1-fine)" in col]
-
-            dashboard = pd.DataFrame({
-                "Ore Effettive": eff[colonne_effettivo_fine].sum(axis=1),
-                "Ore a Budget": budget[colonne_budget_fine].sum(axis=1)
-            })
-
-            dashboard["Scostamento Valore (ore)"] = dashboard["Ore a Budget"] - dashboard["Ore Effettive"]
-            dashboard["Scostamento %"] = np.where(
-                dashboard["Ore a Budget"] > 0,
-                ((dashboard["Ore a Budget"] - dashboard["Ore Effettive"]) / dashboard["Ore a Budget"] * 100).round(1),
-                np.where(dashboard["Ore Effettive"] > 0, -9999, 0)
-            )
-            dashboard = dashboard[~((dashboard["Ore Effettive"] == 0) & (dashboard["Ore a Budget"] == 0))]
-            dashboard = dashboard.sort_values(by="Scostamento %", ascending=True)
-
-            def format_scostamento(val):
-                if val == -9999:
-                    return "Extrabudget"
-                elif val == 0:
-                    return "0%"
-                else:
-                    return f"{val:.1f}%"
-
-            dashboard["Scostamento % (str)"] = dashboard["Scostamento %"].apply(format_scostamento)
-            styled_dashboard = dashboard.style.applymap(colori_scostamenti, subset=["Scostamento % (str)"])
-            st.dataframe(styled_dashboard, use_container_width=True)
-
-        except Exception as e:
-            st.error(f"Errore durante l'elaborazione: {e}")
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const ctx = document.getElementById('barChart').getContext('2d');
+            
+            // Dati di esempio per il grafico
+            const data = {
+                labels: ['Cliente A', 'Cliente B', 'Cliente C', 'Cliente D'],
+                datasets: [
+                    {
+                        label: 'Budget',
+                        data: [200, 100, 80, 0],
+                        backgroundColor: '#3b82f6',
+                        borderColor: '#2563eb',
+                        borderWidth: 1
+                    },
+                    {
+                        label: 'Effettivo',
+                        data: [205, 70, 80, 0],
+                        backgroundColor: '#10b981',
+                        borderColor: '#059669',
+                        borderWidth: 1
+                    },
+                    {
+                        label: 'Extrabudget',
+                        data: [0, 0, 15, 0],
+                        backgroundColor: '#8b5cf6',
+                        borderColor: '#7c3aed',
+                        borderWidth: 1
+                    }
+                ]
+            };
+            
+            const config = {
+                type: 'bar',
+                data: data,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Ore'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Clienti'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.dataset.label}: ${context.parsed.y} ore`;
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+            
+            const barChart = new Chart(ctx, config);
+        });
+    </script>
+</body>
+</html>
+```
