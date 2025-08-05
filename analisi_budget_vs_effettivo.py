@@ -125,7 +125,6 @@ elif sezione == "\U0001F4C8 Analisi Scostamenti":
             eff = df_eff_tot.reindex(index=df_budget.index, columns=colonne_comuni, fill_value=0)
             budget = df_budget.reindex(index=df_budget.index, columns=colonne_comuni, fill_value=0)
 
-            # --- FILTRI SIDEBAR ---
             clienti_unici = eff.index.tolist()
             periodi_disponibili = sorted(colonne_comuni)
             periodi_dropdown = ["Tutto"] + periodi_disponibili
@@ -141,13 +140,19 @@ elif sezione == "\U0001F4C8 Analisi Scostamenti":
                 eff = eff[[periodo_selezionato]]
                 budget = budget[[periodo_selezionato]]
 
-            # --- SCOSTAMENTO % ---
             diff_percent = pd.DataFrame(index=budget.index, columns=budget.columns, dtype=object)
+            diff_percent_numeric = pd.DataFrame(index=budget.index, columns=budget.columns, dtype=float)
+
             for col in budget.columns:
                 diff_percent[col] = np.where(
                     (budget[col] == 0) & (eff[col] > 0), "Extrabudget",
                     np.where((budget[col] == 0) & (eff[col] == 0), "Zero",
                     ((budget[col] - eff[col]) / budget[col] * 100).round(1).astype(str) + "%")
+                )
+                diff_percent_numeric[col] = np.where(
+                    (budget[col] == 0) & (eff[col] > 0), -9999,
+                    np.where((budget[col] == 0) & (eff[col] == 0), 0,
+                    ((budget[col] - eff[col]) / budget[col] * 100).round(1))
                 )
 
             def colori_scostamenti(val):
@@ -182,8 +187,8 @@ elif sezione == "\U0001F4C8 Analisi Scostamenti":
             colonne_effettivo_fine = [col for col in eff.columns if "(1-fine)" in col]
 
             dashboard = pd.DataFrame({
-                "Ore Effettive": eff[colonne_effettivo_fine].sum(axis=1),
-                "Ore a Budget": budget[colonne_budget_fine].sum(axis=1)
+                "Ore Effettive": eff[colonne_effettivo_fine].sum(axis=1) if colonne_effettivo_fine else 0,
+                "Ore a Budget": budget[colonne_budget_fine].sum(axis=1) if colonne_budget_fine else 0
             })
 
             dashboard["Scostamento Valore (ore)"] = dashboard["Ore a Budget"] - dashboard["Ore Effettive"]
