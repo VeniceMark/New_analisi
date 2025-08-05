@@ -1,4 +1,4 @@
-# File completo: Analisi Budget vs Effettivo con filtro cliente e periodo (Streamlit)
+# File completo: Analisi Budget vs Effettivo con filtri a tendina (cliente e periodo)
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -121,18 +121,17 @@ elif sezione == "📈 Analisi Scostamenti":
             df_budget = df_budget.set_index("cliente").fillna(0)
             pattern = re.compile(r"^\d{4}-\d{2} \(1-(15|fine)\)$")
             colonne_valide = [col for col in df_budget.columns if pattern.match(col)]
+
             clienti_lista = sorted(df_budget.index.astype(str).unique())
-            cliente_scelto = st.sidebar.selectbox("👤 Filtra per cliente", ["Tutti"] + clienti_lista)
+            cliente_scelto = st.sidebar.selectbox("👤 Seleziona cliente", ["Tutti"] + clienti_lista)
 
-            pattern_mese = re.compile(r"^(\d{4}-\d{2})")
-            mesi_disponibili = sorted(set([pattern_mese.match(col).group(1) for col in colonne_valide if pattern_mese.match(col)]))
-            mesi_scelti = st.sidebar.multiselect("📆 Filtra per mese (opzionale)", mesi_disponibili, default=mesi_disponibili)
+            periodi_disponibili = sorted(colonne_valide)
+            periodo_scelto = st.sidebar.selectbox("📆 Seleziona periodo", ["Tutto"] + periodi_disponibili)
 
-            colonne_filtrate = [col for col in colonne_valide if any(mese in col for mese in mesi_scelti)]
-
-            if not colonne_filtrate:
-                st.warning("⚠️ Nessun dato disponibile per i mesi selezionati.")
-                st.stop()
+            if periodo_scelto == "Tutto":
+                colonne_filtrate = colonne_valide
+            else:
+                colonne_filtrate = [periodo_scelto]
 
             eff = df_eff_tot.reindex(index=df_budget.index, columns=colonne_filtrate, fill_value=0)
             budget = df_budget.reindex(index=df_budget.index, columns=colonne_filtrate, fill_value=0)
@@ -141,6 +140,42 @@ elif sezione == "📈 Analisi Scostamenti":
                 eff = eff.loc[[cliente_scelto]] if cliente_scelto in eff.index else eff.iloc[0:0]
                 budget = budget.loc[[cliente_scelto]] if cliente_scelto in budget.index else budget.iloc[0:0]
 
+            diff_percent = pd.DataFrame(index=budget.index, columns=budget.columns, dtype=object)
+            for col in colonne_filtrate:
+                diff_percent[col] = np.where(
+                    (budget[col] == 0) & (eff[col] > 0), "Extrabudget",
+                    np.where((budget[col] == 0) & (eff[col] == 0), "Zero",
+                    ((budget[col] - eff[col]) / budget[col] * 100).round(1).astype(str) + "%")
+                )
+
+            def colori_scostamenti(val):
+                if val == "Extrabudget":
+                    return 'background-color: violet; color: white;'
+                elif val == "Zero":
+                    return 'background-color: black; color: white;'
+                else:
+                    try:
+                        val_float = float(val.strip('%'))
+                        norm = (val_float + 50) / 150
+                        color = plt.cm.RdYlGn(norm)
+                        return f'background-color: {matplotlib.colors.rgb2hex(color)}'
+                    except:
+                        return ""
+
+            st.subheader("📈 Scostamento percentuale tra Budget e Ore Effettive")
+            styled_diff = diff_percent.style.applymap(colori_scostamenti)
+            styled_diff = styled_diff.format(lambda v: "0%" if v == "Zero" else v)
+            st.dataframe(styled_diff, use_container_width=True)
+
+            st.subheader("📋 Dati Dettagliati")
+            df_view = pd.concat([eff, budget, diff_percent], keys=["Effettivo", "Budget", "Scostamento %"], axis=1)
+
+            scostamento_cols = [col for col in df_view.columns if isinstance(col, tuple) and col[0] == "Scostamento %"]
+            styled_view = df_view.style.applymap(colori_scostamenti, subset=pd.IndexSlice[:, scostamento_cols])
+            styled_view = styled_view.format(lambda v: "0%" if v == "Zero" else v, subset=pd.IndexSlice[:, scostamento_cols])
+            st.dataframe(styled_view, use_container_width=True)
+
+            st.subheader("📊 Dashboard riepilogativa per cliente")
             colonne_budget_fine = [col for col in budget.columns if "(1-fine)" in col]
             colonne_effettivo_fine = [col for col in eff.columns if "(1-fine)" in col]
 
@@ -165,20 +200,6 @@ elif sezione == "📈 Analisi Scostamenti":
                     return "0%"
                 else:
                     return f"{val:.1f}%"
-
-            def colori_scostamenti(val):
-                if val == "Extrabudget":
-                    return 'background-color: violet; color: white;'
-                elif val == "Zero":
-                    return 'background-color: black; color: white;'
-                else:
-                    try:
-                        val_float = float(val.strip('%'))
-                        norm = (val_float + 50) / 150
-                        color = plt.cm.RdYlGn(norm)
-                        return f'background-color: {matplotlib.colors.rgb2hex(color)}'
-                    except:
-                        return ""
 
             dashboard["Scostamento % (str)"] = dashboard["Scostamento %"].apply(format_scostamento)
             styled_dashboard = dashboard.style.applymap(colori_scostamenti, subset=["Scostamento % (str)"])
