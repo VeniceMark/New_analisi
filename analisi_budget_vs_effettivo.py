@@ -31,7 +31,7 @@ if uploaded_budget_file is not None and uploaded_effettivo_file is not None:
             df_effettivo_raw = pd.read_excel(uploaded_effettivo_file, sheet_name=0)
             st.success(f"File Effettivo caricato: {uploaded_effettivo_file.name}")
 
-            # --- Pre-processing Effettivo ---
+            # Pre-processing Effettivo
             # Normalizzazione colonne
             df_effettivo_raw.columns = df_effettivo_raw.columns.str.strip().str.lower()
 
