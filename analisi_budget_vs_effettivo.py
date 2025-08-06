@@ -20,45 +20,63 @@ Questa applicazione confronta le ore lavorate effettive con le ore previste a bu
 organizzate per cliente e suddivise per periodi.
 """)
 
-# Funzione per caricare i dati
+# Funzione per caricare i dati effettivi
 @st.cache_data
-def load_data(uploaded_file):
-    # Leggi i due fogli Excel
+def load_effettivo_data(uploaded_file):
     try:
-        df_effettivo = pd.read_excel(uploaded_file, sheet_name='Effettivo')
-        # Per il budget prendiamo il primo foglio disponibile (che è "Sheet1" nel tuo file)
-        xl_file = pd.ExcelFile(uploaded_file)
-        budget_sheet_name = xl_file.sheet_names[0]  # Prendi il primo foglio
-        df_budget_raw = pd.read_excel(uploaded_file, sheet_name=budget_sheet_name)
+        df_effettivo = pd.read_excel(uploaded_file)
     except Exception as e:
-        st.error(f"Errore nel caricamento dei fogli: {e}")
-        return None, None
+        st.error(f"Errore nel caricamento del file Effettivo: {e}")
+        return None
     
     # Normalizzazione nomi colonne (minuscolo e rimozione spazi)
     df_effettivo.columns = df_effettivo.columns.str.lower().str.strip()
     
-    # Validazione colonne obbligatorie per effettivo
+    # Validazione colonne obbligatorie
     required_effettivo = ['cliente', 'data', 'ore']
     
     if not all(col in df_effettivo.columns for col in required_effettivo):
-        st.error(f"Il foglio 'Effettivo' deve contenere le colonne: {required_effettivo}")
+        st.error(f"Il file 'Effettivo' deve contenere le colonne: {required_effettivo}")
         st.info(f"Colonne trovate: {list(df_effettivo.columns)}")
-        return None, None
+        return None
     
     # Conversione colonna data in datetime
     try:
         df_effettivo['data'] = pd.to_datetime(df_effettivo['data'])
     except Exception as e:
         st.error(f"Errore nella conversione della colonna 'data': {e}")
-        return None, None
+        return None
     
     # Estrazione mese e giorno
     df_effettivo['mese'] = df_effettivo['data'].dt.to_period('M').astype(str)
     df_effettivo['giorno'] = df_effettivo['data'].dt.day
     
-    # Trasformazione del budget dal formato wide a long
+    return df_effettivo
+
+# Funzione per caricare i dati budget
+@st.cache_data
+def load_budget_data(uploaded_file):
+    try:
+        df_budget_raw = pd.read_excel(uploaded_file)
+    except Exception as e:
+        st.error(f"Errore nel caricamento del file Budget: {e}")
+        return None
+    
+    # Normalizzazione nomi colonne (minuscolo e rimozione spazi)
+    df_budget_raw.columns = df_budget_raw.columns.str.lower().str.strip()
+    
+    # Validazione colonna cliente
+    if 'cliente' not in df_budget_raw.columns:
+        st.error("Il file 'Budget' deve contenere la colonna 'cliente'")
+        st.info(f"Colonne trovate: {list(df_budget_raw.columns)}")
+        return None
+    
     # Identifica le colonne che contengono i periodi
     periodo_cols = [col for col in df_budget_raw.columns if re.match(r'\d{4}-\d{2} \(1-(15|fine)\)', str(col))]
+    
+    if not periodo_cols:
+        st.error("Nessuna colonna periodo trovata nel file Budget. Le colonne devono seguire il formato 'YYYY-MM (1-15)' o 'YYYY-MM (1-fine)'")
+        return None
     
     # Crea un dataframe con cliente e colonne periodo
     df_budget = df_budget_raw[['cliente'] + periodo_cols].copy()
@@ -75,7 +93,10 @@ def load_data(uploaded_file):
     df_budget = df_budget.dropna(subset=['ore'])
     df_budget = df_budget[df_budget['ore'] != 0]
     
-    return df_effettivo, df_budget
+    # Rinomina la colonna ore per coerenza
+    df_budget = df_budget.rename(columns={'ore': 'ore_budget'})
+    
+    return df_budget
 
 # Funzione per creare pivot tables
 def create_pivot_tables(df_effettivo):
@@ -185,16 +206,23 @@ def create_bar_chart(dashboard_data):
 
 # Caricamento file
 st.markdown("## Caricamento Dati")
-st.markdown("Carica il file Excel con i fogli 'Effettivo' e il foglio budget (formato template fornito)")
-uploaded_file = st.file_uploader("Seleziona il file Excel", type="xlsx")
+st.markdown("Carica i file Excel separati per 'Effettivo' e 'Budget'")
 
-if uploaded_file is not None:
-    df_effettivo, df_budget = load_data(uploaded_file)
+col1, col2 = st.columns(2)
+
+with col1:
+    st.markdown("### File Effettivo")
+    effettivo_file = st.file_uploader("Seleziona il file Effettivo", type="xlsx", key="effettivo")
+
+with col2:
+    st.markdown("### File Budget")
+    budget_file = st.file_uploader("Seleziona il file Budget", type="xlsx", key="budget")
+
+if effettivo_file is not None and budget_file is not None:
+    df_effettivo = load_effettivo_data(effettivo_file)
+    df_budget = load_budget_data(budget_file)
     
     if df_effettivo is not None and df_budget is not None:
-        # Rinomina la colonna ore nel budget per coerenza
-        df_budget = df_budget.rename(columns={'ore': 'ore_budget'})
-        
         # Creazione pivot tables
         df_effettivo_pivot = create_pivot_tables(df_effettivo)
         
@@ -226,15 +254,22 @@ if uploaded_file is not None:
         pivot_dettagli = dettagli.pivot(index='cliente', columns='periodo', values=['ore_effettivo', 'ore_budget', 'scostamento_%'])
         
         # Applica stili solo alla colonna scostamento_%
-        styled_dettagli = pivot_dettagli.style.applymap(
-            lambda x: 'background-color: #8b5cf6; color: white' if x == 'extrabudget' 
-            else ('background-color: #1e293b; color: white' if x == '0%' 
-            else ('background-color: #dcfce7; color: #166534' if isinstance(x, (int, float)) and x > 0 
-            else ('background-color: #fee2e2; color: #991b1b' if isinstance(x, (int, float)) and x < 0 
-            else ''))), subset=(slice(None), slice(None), 'scostamento_%')
-        )
+        # Per evitare l'errore, applichiamo lo stile in modo diverso
+        styled_pivot = pivot_dettagli.copy()
         
-        st.dataframe(styled_dettagli)
+        # Creiamo una tabella separata per gli scostamenti con lo styling
+        scostamenti_table = pivot_dettagli['scostamento_%']
+        styled_scarti = scostamenti_table.style.applymap(color_scostamenti)
+        
+        # Visualizziamo le tre sezioni separatamente
+        st.markdown("#### Ore Effettive")
+        st.dataframe(pivot_dettagli['ore_effettivo'])
+        
+        st.markdown("#### Ore a Budget")
+        st.dataframe(pivot_dettagli['ore_budget'])
+        
+        st.markdown("#### Scostamento Percentuale")
+        st.dataframe(styled_scarti)
         
         # Sezione 3: Dashboard Riepilogativa
         st.header("3. Dashboard Riepilogativa per Cliente")
@@ -307,25 +342,29 @@ if uploaded_file is not None:
         
         st.sidebar.header("Formato File")
         st.sidebar.markdown("""
-        Il file deve contenere:
-        1. Un foglio chiamato **'Effettivo'** con colonne:
-           - `cliente`
-           - `data`
-           - `ore`
-        2. Un foglio con il budget nel formato template fornito
+        **File 'Effettivo':**
+        | cliente | data | ore |
+        |---------|------|-----|
+        | Cliente A | 2025-07-05 | 120 |
+        | Cliente B | 2025-07-10 | 70 |
+        
+        **File 'Budget':**
+        | cliente | 2025-01 (1-15) | 2025-01 (1-fine) | ... |
+        |---------|----------------|------------------|-----|
+        | Cliente A | 100 | 200 | ... |
         """)
 else:
-    st.info("Carica un file Excel per iniziare l'analisi")
+    st.info("Carica entrambi i file Excel per iniziare l'analisi")
     st.markdown("""
-    ### Struttura del file Excel richiesta:
+    ### Struttura dei file richiesta:
     
-    **Foglio 'Effettivo':**
+    **File 'Effettivo':**
     | cliente | data | ore |
     |---------|------|-----|
     | Cliente A | 2025-07-05 | 120 |
     | Cliente B | 2025-07-10 | 70 |
     
-    **Foglio Budget (formato template):**
+    **File 'Budget':**
     | cliente | 2025-01 (1-15) | 2025-01 (1-fine) | ... |
     |---------|----------------|------------------|-----|
     | Cliente A | 100 | 200 | ... |
