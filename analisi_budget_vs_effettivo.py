@@ -140,17 +140,32 @@ def calculate_percentage_diff(eff_df, bud_df):
     
     return result
 
-# Funzione per applicare stili condizionali
+# Funzione per applicare stili condizionali con gradiente corretto
 def color_scostamenti(val):
     if val == 'extrabudget':
         return 'background-color: #8b5cf6; color: white'
     elif val == '0%':
         return 'background-color: #1e293b; color: white'
     elif isinstance(val, (int, float)):
-        if val > 0:
-            return 'background-color: #dcfce7; color: #166534'
-        elif val < 0:
-            return 'background-color: #fee2e2; color: #991b1b'
+        # Logica corretta secondo la documentazione:
+        # Verde: Budget > Effettivo (valore positivo) 
+        # Rosso: Budget < Effettivo (valore negativo)
+        if val > 0:  # Budget > Effettivo (risparmio rispetto al budget)
+            # Normalizzazione da 0 a 100 -> 0 a 1
+            normalized = min(1, max(0, val / 100))
+            # Verde chiaro a verde scuro
+            r = int(212 - (212 - 34) * normalized)
+            g = int(255 - (255 - 139) * normalized)
+            b = int(212 - (212 - 34) * normalized)
+            return f'background-color: rgb({r}, {g}, {b}); color: white'
+        elif val < 0:  # Budget < Effettivo (costo aggiuntivo rispetto al budget)
+            # Normalizzazione da -100 a 0 -> 0 a 1
+            normalized = min(1, max(0, (val + 100) / 100))
+            # Rosso chiaro a rosso scuro
+            r = int(255 - (255 - 139) * normalized)
+            g = int(160 - (160 - 0) * normalized)
+            b = int(160 - (160 - 0) * normalized)
+            return f'background-color: rgb({r}, {g}, {b}); color: white'
     return ''
 
 # Funzione per creare il grafico
@@ -229,6 +244,13 @@ if effettivo_file is not None and budget_file is not None:
         # Sezione 1: Scostamento Percentuale
         st.header("1. Scostamento Percentuale")
         st.markdown("Confronto percentuale tra ore effettive e ore a budget per cliente e periodo.")
+        st.markdown("""
+        **Legenda colori:**
+        - 🟢 **Verde**: Budget > Effettivo (risparmio rispetto al budget)
+        - 🔴 **Rosso**: Budget < Effettivo (costo aggiuntivo rispetto al budget)
+        - 🟣 **Viola**: Ore effettive > 0 e budget = 0
+        - ⚫ **Nero**: Nessuna attività registrata
+        """)
         scostamenti = calculate_percentage_diff(df_effettivo_pivot, df_budget)
         st.dataframe(scostamenti.style.applymap(color_scostamenti))
         
@@ -253,15 +275,7 @@ if effettivo_file is not None and budget_file is not None:
         # Pivoting per visualizzazione
         pivot_dettagli = dettagli.pivot(index='cliente', columns='periodo', values=['ore_effettivo', 'ore_budget', 'scostamento_%'])
         
-        # Applica stili solo alla colonna scostamento_%
-        # Per evitare l'errore, applichiamo lo stile in modo diverso
-        styled_pivot = pivot_dettagli.copy()
-        
-        # Creiamo una tabella separata per gli scostamenti con lo styling
-        scostamenti_table = pivot_dettagli['scostamento_%']
-        styled_scarti = scostamenti_table.style.applymap(color_scostamenti)
-        
-        # Visualizziamo le tre sezioni separatamente
+        # Visualizziamo le tre sezioni separatamente per evitare errori di styling
         st.markdown("#### Ore Effettive")
         st.dataframe(pivot_dettagli['ore_effettivo'])
         
@@ -269,7 +283,8 @@ if effettivo_file is not None and budget_file is not None:
         st.dataframe(pivot_dettagli['ore_budget'])
         
         st.markdown("#### Scostamento Percentuale")
-        st.dataframe(styled_scarti)
+        scostamenti_table = pivot_dettagli['scostamento_%']
+        st.dataframe(scostamenti_table.style.applymap(color_scostamenti))
         
         # Sezione 3: Dashboard Riepilogativa
         st.header("3. Dashboard Riepilogativa per Cliente")
@@ -305,18 +320,33 @@ if effettivo_file is not None and budget_file is not None:
                 elif val == '0%':
                     return 'background-color: #1e293b; color: white'
                 elif isinstance(val, (int, float)):
-                    if val > 0:
-                        return 'background-color: #dcfce7; color: #166534'
-                    elif val < 0:
-                        return 'background-color: #fee2e2; color: #991b1b'
+                    # Logica corretta secondo la documentazione:
+                    # Verde: Budget > Effettivo (valore positivo) 
+                    # Rosso: Budget < Effettivo (valore negativo)
+                    if val > 0:  # Budget > Effettivo (risparmio rispetto al budget)
+                        # Normalizzazione da 0 a 100 -> 0 a 1
+                        normalized = min(1, max(0, val / 100))
+                        # Verde chiaro a verde scuro
+                        r = int(212 - (212 - 34) * normalized)
+                        g = int(255 - (255 - 139) * normalized)
+                        b = int(212 - (212 - 34) * normalized)
+                        return f'background-color: rgb({r}, {g}, {b}); color: white'
+                    elif val < 0:  # Budget < Effettivo (costo aggiuntivo rispetto al budget)
+                        # Normalizzazione da -100 a 0 -> 0 a 1
+                        normalized = min(1, max(0, (val + 100) / 100))
+                        # Rosso chiaro a rosso scuro
+                        r = int(255 - (255 - 139) * normalized)
+                        g = int(160 - (160 - 0) * normalized)
+                        b = int(160 - (160 - 0) * normalized)
+                        return f'background-color: rgb({r}, {g}, {b}); color: white'
             elif col_name == 'scostamento_valore':
                 if val == 'extrabudget':
                     return 'background-color: #8b5cf6; color: white'
                 elif isinstance(val, (int, float)):
-                    if val > 0:
-                        return 'background-color: #dcfce7; color: #166534'
-                    elif val < 0:
+                    if val > 0:  # Effettivo > Budget (costo aggiuntivo)
                         return 'background-color: #fee2e2; color: #991b1b'
+                    elif val < 0:  # Effettivo < Budget (risparmio)
+                        return 'background-color: #dcfce7; color: #166534'
             return ''
         
         styled_dashboard = dashboard_data.style.apply(lambda x: [
@@ -334,10 +364,11 @@ if effettivo_file is not None and budget_file is not None:
         # Informazioni aggiuntive
         st.sidebar.header("Informazioni")
         st.sidebar.markdown("""
-        - **Verde**: Ore effettive superiori al budget
-        - **Rosso**: Ore effettive inferiori al budget
-        - **Viola**: Ore extrabudget (non previste a budget)
-        - **Nero**: Nessuna attività registrata
+        **Legenda colori:**
+        - 🟢 **Verde**: Budget > Effettivo (risparmio rispetto al budget)
+        - 🔴 **Rosso**: Budget < Effettivo (costo aggiuntivo rispetto al budget)
+        - 🟣 **Viola**: Ore effettive > 0 e budget = 0
+        - ⚫ **Nero**: Nessuna attività registrata
         """)
         
         st.sidebar.header("Formato File")
