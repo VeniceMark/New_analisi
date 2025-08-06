@@ -110,4 +110,3 @@ if effettivo_file:
             file_name="confronto_budget_vs_effettivo.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-``
