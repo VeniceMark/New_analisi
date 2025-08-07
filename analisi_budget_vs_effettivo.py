@@ -158,7 +158,7 @@ def apply_analysis_rules(budget_val, effettivo_val):
         return "None"
     elif budget_val > 0:
         scostamento = ((budget_val - effettivo_val) / budget_val) * 100
-        return round(scostamento, 2)
+        return f"{round(scostamento, 2)}%"
     else:
         return "None"
 
@@ -229,9 +229,9 @@ def create_summary_table(budget_data, pivot_1_15, pivot_totale):
         
         results.append({
             'Cliente': cliente,
-            'Budget': budget_totale,
-            'Effettivo': effettivo_totale,
-            'Differenza': differenza,
+            'Budget': round(budget_totale, 2),
+            'Effettivo': round(effettivo_totale, 2),
+            'Differenza': round(differenza, 2),
             'Scostamento %': scostamento
         })
     
@@ -244,18 +244,37 @@ def get_color_for_value(value):
             return "background-color: #8B008B; color: white"  # Viola
         elif value == "None":
             return "background-color: #000000; color: white"  # Nero
+        elif value.endswith('%'):
+            # Estrai il valore numerico dalla stringa percentuale
+            try:
+                numeric_value = float(value[:-1])  # Rimuovi il simbolo %
+                # Gradiente da rosso (-100%) a verde (+100%)
+                normalized = max(-100, min(100, numeric_value)) / 100
+                if normalized < 0:
+                    # Da rosso a giallo
+                    red = 1.0
+                    green = 1.0 + normalized
+                    blue = 0.0
+                else:
+                    # Da giallo a verde
+                    red = 1.0 - normalized
+                    green = 1.0
+                    blue = 0.0
+                
+                color = f"background-color: rgb({int(red*255)}, {int(green*255)}, {int(blue*255)})"
+                return color
+            except:
+                return ""
         else:
             return ""
     else:
-        # Gradiente da rosso (-100%) a verde (+100%)
+        # Fallback per valori numerici (dovrebbe essere raro ora)
         normalized = max(-100, min(100, value)) / 100
         if normalized < 0:
-            # Da rosso a giallo
             red = 1.0
             green = 1.0 + normalized
             blue = 0.0
         else:
-            # Da giallo a verde
             red = 1.0 - normalized
             green = 1.0
             blue = 0.0
@@ -294,24 +313,34 @@ def create_quarterly_analysis(detailed_df):
                     year = int(match.group(1))
                     month = int(match.group(2))
                     
-                    if month in [1, 2, 3]:
-                        quarters['Q1'].append(row[col])
-                    elif month in [4, 5, 6]:
-                        quarters['Q2'].append(row[col])
-                    elif month in [7, 8, 9]:
-                        quarters['Q3'].append(row[col])
-                    elif month in [10, 11, 12]:
-                        quarters['Q4'].append(row[col])
+                    # Estrai valore numerico se è una percentuale
+                    value = row[col]
+                    if isinstance(value, str) and value.endswith('%'):
+                        try:
+                            numeric_value = float(value[:-1])
+                        except:
+                            numeric_value = None
+                    elif isinstance(value, (int, float)) and not pd.isna(value):
+                        numeric_value = value
+                    else:
+                        numeric_value = None
+                    
+                    if numeric_value is not None:
+                        if month in [1, 2, 3]:
+                            quarters['Q1'].append(numeric_value)
+                        elif month in [4, 5, 6]:
+                            quarters['Q2'].append(numeric_value)
+                        elif month in [7, 8, 9]:
+                            quarters['Q3'].append(numeric_value)
+                        elif month in [10, 11, 12]:
+                            quarters['Q4'].append(numeric_value)
         
         # Calcola medie per trimestre
         quarterly_row = {'Cliente': cliente}
         for quarter, values in quarters.items():
             if values:
-                numeric_values = [v for v in values if isinstance(v, (int, float)) and not pd.isna(v)]
-                if numeric_values:
-                    quarterly_row[quarter] = round(np.mean(numeric_values), 2)
-                else:
-                    quarterly_row[quarter] = "N/A"
+                avg_value = np.mean(values)
+                quarterly_row[quarter] = f"{round(avg_value, 2)}%"
             else:
                 quarterly_row[quarter] = "N/A"
         
@@ -327,22 +356,33 @@ def create_projections(summary_df, periods):
     projections = []
     
     for _, row in summary_df.iterrows():
-        if isinstance(row['Scostamento %'], (int, float)) and not pd.isna(row['Scostamento %']):
-            # Proiezione basata sul trend attuale
-            current_performance = 100 - row['Scostamento %']  # Performance percentuale
-            
-            # Proiezione prossimo trimestre
-            next_q_projection = row['Budget'] * (current_performance / 100) * 1.1  # Assumendo miglioramento 10%
-            
-            # Proiezione anno successivo
-            next_year_projection = row['Budget'] * (current_performance / 100) * 4  # Estendi a 4 trimestri
-            
-            projections.append({
-                'Cliente': row['Cliente'],
-                'Performance Attuale %': round(current_performance, 2),
-                'Proiezione Prossimo Q': round(next_q_projection, 2),
-                'Proiezione Anno Prossimo': round(next_year_projection, 2)
-            })
+        scostamento_str = row['Scostamento %']
+        
+        # Estrai valore numerico dalla stringa percentuale
+        if isinstance(scostamento_str, str) and scostamento_str.endswith('%'):
+            try:
+                scostamento_val = float(scostamento_str[:-1])
+                current_performance = 100 - scostamento_val  # Performance percentuale
+                
+                # Proiezione prossimo trimestre
+                next_q_projection = row['Budget'] * (current_performance / 100) * 1.1  # Assumendo miglioramento 10%
+                
+                # Proiezione anno successivo
+                next_year_projection = row['Budget'] * (current_performance / 100) * 4  # Estendi a 4 trimestri
+                
+                projections.append({
+                    'Cliente': row['Cliente'],
+                    'Performance Attuale %': f"{round(current_performance, 2)}%",
+                    'Proiezione Prossimo Q': round(next_q_projection, 2),
+                    'Proiezione Anno Prossimo': round(next_year_projection, 2)
+                })
+            except:
+                projections.append({
+                    'Cliente': row['Cliente'],
+                    'Performance Attuale %': "N/A",
+                    'Proiezione Prossimo Q': "N/A",
+                    'Proiezione Anno Prossimo': "N/A"
+                })
         else:
             projections.append({
                 'Cliente': row['Cliente'],
@@ -500,7 +540,12 @@ if uploaded_budget is not None and uploaded_effettive is not None:
                         values = []
                         for q in quarters:
                             val = quarterly_df.loc[i, q]
-                            if isinstance(val, (int, float)) and not pd.isna(val):
+                            if isinstance(val, str) and val.endswith('%'):
+                                try:
+                                    values.append(float(val[:-1]))
+                                except:
+                                    values.append(0)
+                            elif isinstance(val, (int, float)) and not pd.isna(val):
                                 values.append(val)
                             else:
                                 values.append(0)
@@ -601,7 +646,7 @@ if uploaded_budget is not None and uploaded_effettive is not None:
             with col4:
                 if not summary_df.empty and total_budget > 0:
                     scostamento_generale = ((total_budget - total_effettivo) / total_budget) * 100
-                    st.metric("Scostamento Generale", f"{scostamento_generale:.1f}%")
+                    st.metric("Scostamento Generale", f"{scostamento_generale:.2f}%")
                 else:
                     st.metric("Scostamento Generale", "N/A")
         
