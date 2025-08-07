@@ -211,15 +211,16 @@ def create_summary_table(budget_data, pivot_1_15, pivot_totale):
     results = []
     
     for cliente in sorted(all_clients):
-        # Calcola totale budget
-        budget_totale = sum(budget_data.get(cliente, {}).values())
+        # Calcola totale budget - USA SOLO I VALORI (1-fine) per evitare doppi conteggi
+        budget_totale = 0
+        for period, value in budget_data.get(cliente, {}).items():
+            if '(1-fine)' in period:  # Solo i valori che rappresentano il mese completo
+                budget_totale += value
         
-        # Calcola totale effettivo
+        # Calcola totale effettivo - USA SOLO pivot_totale (che rappresenta tutto il mese)
         effettivo_totale = 0
-        if pivot_1_15 is not None and cliente in pivot_1_15.index:
-            effettivo_totale += pivot_1_15.loc[cliente].sum()
         if pivot_totale is not None and cliente in pivot_totale.index:
-            effettivo_totale += pivot_totale.loc[cliente].sum()
+            effettivo_totale = pivot_totale.loc[cliente].sum()
         
         # Calcola differenza
         differenza = budget_totale - effettivo_totale
@@ -282,15 +283,18 @@ def get_color_for_value(value):
         color = f"background-color: rgb({int(red*255)}, {int(green*255)}, {int(blue*255)})"
         return color
 
-def style_dataframe(df):
+def style_dataframe(df, exclude_columns=None):
     """Applica stili alla tabella"""
     def apply_color(val):
         return get_color_for_value(val)
     
-    # Applica colori a tutte le colonne tranne Cliente
+    if exclude_columns is None:
+        exclude_columns = []
+    
+    # Applica colori a tutte le colonne tranne Cliente e quelle escluse
     styled = df.style
     for col in df.columns:
-        if col != 'Cliente':
+        if col not in ['Cliente'] + exclude_columns:
             styled = styled.applymap(apply_color, subset=[col])
     
     return styled
@@ -308,47 +312,77 @@ def create_quarterly_analysis(detailed_df):
         
         for col in detailed_df.columns[1:]:  # Escludi Cliente
             if col != 'Cliente':
-                match = re.search(r'(\d{4})-(\d{2})', col)
-                if match:
-                    year = int(match.group(1))
-                    month = int(match.group(2))
-                    
-                    # Estrai valore numerico se è una percentuale
-                    value = row[col]
-                    if isinstance(value, str) and value.endswith('%'):
-                        try:
-                            numeric_value = float(value[:-1])
-                        except:
-                            numeric_value = None
-                    elif isinstance(value, (int, float)) and not pd.isna(value):
-                        numeric_value = value
-                    else:
-                        numeric_value = None
-                    
-                    if numeric_value is not None:
+                # Considera SOLO i periodi (1-fine) per evitare doppi conteggi
+                if '(1-fine)' in col:
+                    match = re.search(r'(\d{4})-(\d{2})', col)
+                    if match:
+                        year = int(match.group(1))
+                        month = int(match.group(2))
+                        
+                        value = row[col]
+                        
+                        # Assegna al trimestre corretto
                         if month in [1, 2, 3]:
-                            quarters['Q1'].append(numeric_value)
+                            quarters['Q1'].append(value)
                         elif month in [4, 5, 6]:
-                            quarters['Q2'].append(numeric_value)
+                            quarters['Q2'].append(value)
                         elif month in [7, 8, 9]:
-                            quarters['Q3'].append(numeric_value)
+                            quarters['Q3'].append(value)
                         elif month in [10, 11, 12]:
-                            quarters['Q4'].append(numeric_value)
+                            quarters['Q4'].append(value)
         
-        # Calcola medie per trimestre
+        # Determina il valore per ogni trimestre
         quarterly_row = {'Cliente': cliente}
         for quarter, values in quarters.items():
-            if values:
-                avg_value = np.mean(values)
-                quarterly_row[quarter] = f"{round(avg_value, 2)}%"
-            else:
+            if not values:
                 quarterly_row[quarter] = "N/A"
+            else:
+                # Filtra valori non-None
+                non_none_values = [v for v in values if v != "None"]
+                
+                if not non_none_values:
+                    quarterly_row[quarter] = "N/A"
+                elif any(v == "extrabudget" for v in non_none_values):
+                    quarterly_row[quarter] = "extrabudget"
+                else:
+                    # Calcola media dei valori percentuali
+                    numeric_values = []
+                    for v in non_none_values:
+                        if isinstance(v, str) and v.endswith('%'):
+                            try:
+                                numeric_values.append(float(v[:-1]))
+                            except:
+                                pass
+                    
+                    if numeric_values:
+                        avg_value = np.mean(numeric_values)
+                        quarterly_row[quarter] = f"{round(avg_value, 2)}%"
+                    else:
+                        quarterly_row[quarter] = "N/A"
         
         quarterly_data.append(quarterly_row)
     
     return pd.DataFrame(quarterly_data)
 
-def create_projections(summary_df, periods):
+def sort_mixed_column(series):
+    """Funzione per ordinare colonne che contengono sia percentuali che testo"""
+    def sort_key(value):
+        if isinstance(value, str):
+            if value.endswith('%'):
+                try:
+                    return (0, float(value[:-1]))  # (tipo, valore numerico)
+                except:
+                    return (2, value)  # Testo non convertibile
+            elif value == "extrabudget":
+                return (1, 0)  # extrabudget viene dopo le percentuali
+            elif value == "None":
+                return (3, 0)  # None viene per ultimo
+            else:
+                return (2, value)  # Altri testi
+        else:
+            return (0, float(value))  # Numeri puri
+    
+    return series.iloc[series.map(sort_key).argsort()]
     """Crea proiezioni per quarters successivi"""
     if summary_df.empty:
         return pd.DataFrame()
@@ -479,7 +513,11 @@ if uploaded_budget is not None and uploaded_effettive is not None:
             with tab1:
                 st.header("Tabella A - Dettaglio Mensile")
                 if not detailed_df.empty:
-                    st.dataframe(style_dataframe(detailed_df), use_container_width=True)
+                    # Crea dataframe con funzione di ordinamento personalizzata
+                    displayed_df = detailed_df.copy()
+                    st.dataframe(style_dataframe(displayed_df), use_container_width=True)
+                    
+                    st.info("💡 **Ordinamento**: Le colonne con percentuali si ordinano numericamente. L'ordine è: percentuali (dal più negativo al più positivo), poi 'extrabudget', poi altri testi, infine 'None'.")
                     
                     # Download
                     csv = detailed_df.to_csv(index=False)
@@ -495,7 +533,10 @@ if uploaded_budget is not None and uploaded_effettive is not None:
             with tab2:
                 st.header("Tabella B - Riepilogo Totale")
                 if not summary_df.empty:
-                    st.dataframe(style_dataframe(summary_df), use_container_width=True)
+                    # Escludi Budget e Effettivo dalla colorazione, mantieni Differenza
+                    st.dataframe(style_dataframe(summary_df, exclude_columns=['Budget', 'Effettivo']), use_container_width=True)
+                    
+                    st.info("💡 **Note**: Budget ed Effettivo senza colorazione. Differenza e Scostamento % sono colorati. Il Budget totale usa solo i valori (1-fine) per evitare doppi conteggi.")
                     
                     # Grafico riepilogativo
                     fig, ax = plt.subplots(figsize=(12, 6))
@@ -532,6 +573,8 @@ if uploaded_budget is not None and uploaded_effettive is not None:
                 if not quarterly_df.empty:
                     st.dataframe(style_dataframe(quarterly_df), use_container_width=True)
                     
+                    st.info("💡 **Logica Trimestri**: Q1=Gen-Mar, Q2=Apr-Giu, Q3=Lug-Set, Q4=Ott-Dic. **IMPORTANTE**: Usa solo i periodi (1-fine) per evitare doppi conteggi - i valori (1-fine) includono già quelli (1-15). Se c'è 'extrabudget' nel trimestre → 'extrabudget'. Altrimenti media delle percentuali (esclusi 'None').")
+                    
                     # Grafico trimestrale
                     fig, ax = plt.subplots(figsize=(12, 6))
                     quarters = ['Q1', 'Q2', 'Q3', 'Q4']
@@ -545,16 +588,14 @@ if uploaded_budget is not None and uploaded_effettive is not None:
                                     values.append(float(val[:-1]))
                                 except:
                                     values.append(0)
-                            elif isinstance(val, (int, float)) and not pd.isna(val):
-                                values.append(val)
                             else:
-                                values.append(0)
+                                values.append(0)  # Non plottare extrabudget e N/A
                         
                         ax.plot(quarters, values, marker='o', label=cliente)
                     
                     ax.set_xlabel('Trimestre')
                     ax.set_ylabel('Scostamento Medio %')
-                    ax.set_title('Trend Trimestrale Scostamenti')
+                    ax.set_title('Trend Trimestrale Scostamenti (Solo Valori Numerici)')
                     ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
                     ax.grid(True, alpha=0.3)
                     
@@ -578,6 +619,8 @@ if uploaded_budget is not None and uploaded_effettive is not None:
                 
                 if not projections_df.empty:
                     st.dataframe(projections_df, use_container_width=True)
+                    
+                    st.info("💡 **Logica Proiezioni**: Basate sulla performance attuale (100% - Scostamento%). Prossimo Q = Performance × Budget × 1.1 (miglioramento 10%). Anno Prossimo = Performance × Budget × 4 (4 trimestri).")
                     
                     # Grafico proiezioni
                     fig, ax = plt.subplots(figsize=(12, 6))
