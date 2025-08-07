@@ -42,21 +42,51 @@ def parse_budget_data(budget_df):
     if budget_df is None:
         return None, []
     
+    # Debug: mostra la struttura del file
+    st.write("**Debug - Struttura Budget File:**")
+    st.write("Colonne trovate:", list(budget_df.columns))
+    st.write("Prime 3 righe:")
+    st.dataframe(budget_df.head(3))
+    
     budget_data = {}
     periods = []
     
-    # Trova le colonne che contengono "budget ore nel con capo colonna per periodo"
+    # Metodo 1: Trova colonne che contengono "budget ore nel con capo colonna per periodo"
     budget_columns = [col for col in budget_df.columns if 'budget ore nel con capo colonna per periodo' in col.lower()]
+    
+    # Metodo 2: Se non trova niente, cerca pattern più flessibili
+    if not budget_columns:
+        # Cerca colonne che contengono pattern data YYYY-MM
+        budget_columns = [col for col in budget_df.columns if re.search(r'\d{4}-\d{2}.*\([^)]*\)', str(col))]
+    
+    # Metodo 3: Se ancora non trova, cerca qualsiasi colonna con date
+    if not budget_columns:
+        budget_columns = [col for col in budget_df.columns if re.search(r'\d{4}-\d{2}', str(col))]
+    
+    st.write("**Colonne budget identificate:**", budget_columns)
+    
+    if not budget_columns:
+        st.error("❌ Nessuna colonna budget trovata. Pattern cercati:")
+        st.write("1. Colonne contenenti: 'budget ore nel con capo colonna per periodo'")
+        st.write("2. Colonne con pattern: 'YYYY-MM (...)'")
+        st.write("3. Colonne con pattern: 'YYYY-MM'")
+        return None, []
     
     # Estrai i periodi dalle colonne
     for col in budget_columns:
-        match = re.search(r'(\d{4}-\d{2})\s*\(([^)]+)\)', col)
+        # Prova diversi pattern
+        match = re.search(r'(\d{4}-\d{2})\s*\(([^)]+)\)', str(col))
         if match:
             year_month = match.group(1)
             period_type = match.group(2).strip()
             period_key = f"{year_month} ({period_type})"
             if period_key not in periods:
                 periods.append(period_key)
+        else:
+            # Fallback: usa nome colonna come periodo
+            periods.append(str(col))
+    
+    st.write("**Periodi identificati:**", periods)
     
     # Organizza i dati per cliente
     for _, row in budget_df.iterrows():
@@ -66,18 +96,24 @@ def parse_budget_data(budget_df):
             
         budget_data[cliente] = {}
         
-        for col in budget_columns:
-            match = re.search(r'(\d{4}-\d{2})\s*\(([^)]+)\)', col)
-            if match:
-                year_month = match.group(1)
-                period_type = match.group(2).strip()
-                period_key = f"{year_month} ({period_type})"
-                
-                try:
-                    value = float(row[col]) if pd.notna(row[col]) else 0
-                    budget_data[cliente][period_key] = value
-                except (ValueError, TypeError):
-                    budget_data[cliente][period_key] = 0
+        for i, col in enumerate(budget_columns):
+            # Usa il periodo corrispondente
+            if i < len(periods):
+                period_key = periods[i]
+            else:
+                period_key = str(col)
+            
+            try:
+                value = float(row[col]) if pd.notna(row[col]) else 0
+                budget_data[cliente][period_key] = value
+            except (ValueError, TypeError):
+                budget_data[cliente][period_key] = 0
+    
+    st.write("**Esempio dati budget processati (primo cliente):**")
+    if budget_data:
+        first_client = list(budget_data.keys())[0]
+        st.write(f"Cliente: {first_client}")
+        st.write("Dati:", budget_data[first_client])
     
     return budget_data, sorted(periods)
 
