@@ -2,6 +2,16 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from io import BytesIO
+import locale
+
+# Imposta localizzazione italiana per i nomi dei mesi
+try:
+    locale.setlocale(locale.LC_TIME, 'it_IT.UTF-8')
+except:
+    try:
+        locale.setlocale(locale.LC_TIME, 'it_IT')
+    except:
+        st.warning("⚠️ Locale italiana non disponibile. I mesi potrebbero comparire in inglese.")
 
 st.set_page_config(page_title="Budget vs Effettivo", layout="wide")
 st.title("📊 Analisi Budget vs Effettivo")
@@ -9,7 +19,6 @@ st.title("📊 Analisi Budget vs Effettivo")
 # ------------------------------
 # FUNZIONI DI SUPPORTO
 # ------------------------------
-
 def get_time_block(date):
     """Restituisce il blocco temporale corrispondente alla data"""
     date = pd.to_datetime(date)
@@ -40,13 +49,18 @@ effettivo_file = st.file_uploader("Carica il file Excel dell'effettivo", type=["
 
 if effettivo_file:
     effettivo_df = pd.read_excel(effettivo_file)
-    
+
+    # Rinomina colonna 'ore' se necessario
+    if 'ore' in effettivo_df.columns:
+        effettivo_df.rename(columns={"ore": "ore lavorate"}, inplace=True)
+
     # Controllo e parsing date
     effettivo_df['data'] = pd.to_datetime(effettivo_df['data'], errors='coerce')
     effettivo_df = effettivo_df.dropna(subset=['data'])
 
+    # Creazione blocchi temporali
     effettivo_df['time_block'] = effettivo_df['data'].apply(get_time_block)
-    
+
     st.success("✅ Dati effettivi caricati e processati")
     st.dataframe(effettivo_df, use_container_width=True)
 
@@ -98,7 +112,7 @@ if effettivo_file:
             (confronto_df["ore_effettive"] - confronto_df["ore_budget"]) / confronto_df["ore_budget"] * 100
         )
 
-        # Visualizzazione risultato
+        st.subheader("📈 Risultato Finale: Confronto con Scostamenti (%)")
         st.dataframe(confronto_df, use_container_width=True)
 
         # Download confronto
